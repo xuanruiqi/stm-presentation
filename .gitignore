@@ -1,3 +1,8 @@
+## Build artifacts
+*.pdf
+*.dvi
+*.ps
+
 ## Core latex/pdflatex auxiliary files:
 *.aux
 *.lof
