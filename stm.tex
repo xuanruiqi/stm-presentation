@@ -1,0 +1,272 @@
+\documentclass{beamer}
+\mode<presentation> {
+  \usetheme{Berlin}
+}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{array}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{textcomp}
+\usepackage{dsfont}
+
+% Configuring listings package
+\lstset{ %
+  basicstyle=\small\ttfamily,
+  upquote=true
+  commentstyle=\slshape,
+  keywordstyle=\bfseries,
+  numberstyle=\tiny,
+  frame=none,
+  keepspaces=true,
+  showstringspaces=false   % don't put cups under spaces in docstrings
+}
+
+\title[Programming with Software Transactional Memory]{Programming with Software Transactional Memory: Shared-Memory Threads without Data Races}
+\author{Xuanrui (Ray) Qi}
+\date{\today}
+
+\theoremstyle{plain}
+
+\begin{document}
+\begin{frame}
+  \titlepage
+\end{frame}
+
+\begin{frame}
+  \frametitle{What concurrent programming models do we know?}
+  In COMP 50CP, we talk about two concurrent programming models:
+  \begin{itemize}
+  \item \textbf{Actor model/CSP:} no shared memory, no race conditions
+  \item \textbf{Shared-memory threads:} shared memory, race conditions
+  \end{itemize}
+
+  Question: are there other combinations? I'm sure no one wants race conditions
+  without shared memory, so can we have shared memory but no race conditions?
+\end{frame}
+
+\begin{frame}
+  \frametitle{Mutual exclusion}
+  Can we come up with a shared-memory programming model without data races?\\~\\
+
+  \pause
+
+  It's easy! We already have one. It's called \textit{programming with mutexes}!\\~\\
+
+  \pause
+
+  Can we generalize this memory access model?
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Why data races?}
+  Why do we have data races? Revisit this program.
+  
+  \lstinputlisting[language=Python]{data_race.py}
+
+  If we launch multiple threads running \lstinline{mutator}, we will see a data race.
+  Where does this data race occur?
+\end{frame}
+
+\begin{frame}
+  \frametitle{Atomicity}
+  Our problem is that access to the counter is not \textbf{atomic}. If memory access is
+  an atomic operation\\~\\
+
+  \pause
+
+  A memory operation should not be interruptable, and other memory users should not be
+  allowed to see the intermediate states of the memory in the middle of memory operations.\\~\\
+
+  \pause
+  
+  Mutual exclusion is but one way to guarantee atomicity!\\~\\
+
+  \pause
+  What are some other applications in which atomicity is critical?
+\end{frame}
+
+\begin{frame}
+  \frametitle{Atomicity in databases}
+  Yes, atomicity is important in databases. Each database \textbf{transaction} must be atomic and
+  uninterruptable. Suppose we have the following table that represents bank accounts:
+  \begin{table}
+    \begin{tabular}{| c | c | c |}
+      \hline
+      ID & Name & Balance\\
+      \hline \hline
+      0  & Mark & \$100.00\\
+      \hline
+      1  & Alex & \$95.00\\
+      \hline
+      2  & Ray  & \$84.00\\
+      \hline
+    \end{tabular}
+    \caption{Accounts at the Bank of Halligan}
+  \end{table}
+  
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Atomicity in databases}
+  Suppose Mark wants to pay each of his TAs \$10, and I want to pay Alex \$5. We now have two
+  transactions to be executed (in SQL-like pseudocode):
+
+  \pause
+  
+  \begin{lstlisting}
+    transaction MARK:
+        BALANCE -= 20 where NAME == 'Mark';
+        BALANCE += 10 where NAME == 'Alex' or 'Ray';
+
+    transaction RAY:
+        BALANCE -= 5 where NAME == 'Ray';
+        BALANCE += 5 where NAME == 'Alex';
+  \end{lstlisting}
+  \pause
+  
+  We observe that each transaction must be atomic, or we will have wrong balances. I might end up with more
+  money than I should have, but the head of the bank, Kathleen, won't be happy. If I don't get my
+  paycheck, I will be furious.
+\end{frame}
+
+\begin{frame}
+  \frametitle{Guaranteeing atomicity}
+  How can we guarantee that each transaction is atomic?
+
+  \pause
+  
+  \begin{itemize}
+  \item Mutexes: sure, but what if we're working with the Bank of America's database? If one million
+    users are performing transactions concurrently, I'm sure they won't be happy about each and every
+    connection locking the BoA database. This might also cause deadlocks, which are absolutely undesirable.
+
+    \pause
+
+  \item Two-phase locking (2PL): an improved approach that uses separate locks for reads and writes. However,
+    it still involves a lot of contention and is also prone to deadlocks. Thus, most
+    production-level database systems do not use 2PL.
+
+    \pause
+
+  \item Do we really have to use mutexes?
+  \end{itemize}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Guaranteeing atomicity}
+  We won't get into the details of these lock-free algorithms, but we'll see how they work on a high level.
+  \begin{itemize}
+  \item Caching: cache the object for each thread so that they could be read quickly, while write is a bit
+    more tricky. Think CPU-level caches in Comp 40.
+
+    \pause
+    
+  \item Timestamping: we give each object a write and a read timestamp, and check if the object is consistent after each operation.
+
+    \pause
+
+  \item Other ordering-based algorithms: there's a complex algorithm called commitment ordering. Another algorithm in this
+    category, multiversion concurrency control (MVCC), is used by commercial databases such as MySQL, PostgreSQL and MongoDB.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Guaranteeing atomicity in programming languages}
+  To avoid data races in concurrent programs while still allowing sharing objects, we look to databases!\\~\\
+
+  \pause
+
+  Databases are an example of such objects. They are shared objects in various domain-specific query languages
+  like SQL, which allow no data races.\\~\\
+
+  \pause
+
+  We could just treat objects as databases and allow multiple threads to operate on them transactionally. This
+  is the essence of \textbf{software transactional memory} (STM).
+\end{frame}
+
+\begin{frame}
+  \frametitle{Programming with STM}
+  For the purposes of demonstrating programming with STM, we will use Haskell, a functional programming language
+  similar to ML. In Haskell, we will code up the program that handles payments between Mark, Alex and I.\\~\\
+
+  We will use \textit{monads} to structure our program, which are a way to compose stateful operations
+  (like transactions), but we will not get into it.
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Coding up payments}
+  Haskell variables are generally not mutable (and not transactional), so we use special transactional variables
+  (\lstinline{TVar}s in Haskell parlance) to represent account balances.
+
+  \lstinputlisting[language=Haskell]{Payment.hs}
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Setting up accounts}
+  Then, we setup accounts for the three of us.
+  \lstinputlisting[language=Haskell]{Accounts.hs}
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Performing transactions concurrently}
+  Finally, we may perform our transactions concurrently. 
+  \lstinputlisting[language=Haskell]{Transactions.hs}
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Wait, how did that work?}
+  To understand this, we will need to know about the \lstinline{STM} and \lstinline{IO} monads, which
+  represent stateful operations. An \lstinline{STM} monad represents a STM transaction on a high level,
+  and an \lstinline{IO} monad represents a sequence of I/O (memory access, console, etc.) operations.\\~\\
+
+  \lstinline{atomically} is the ``magic'' that performs STM transactions, taking an STM transaction and
+  returning an I/O action. \lstinline{readTVarIO} is an I/O action that reads a
+  \lstinline{TVar}. \lstinline{async} is just to make sure that the calling thread waits for all children to
+  finish (we don't really need asynchronous I/O here).
+\end{frame}
+
+\begin{frame}
+  \frametitle{Using STM}
+  Besides the peculiarities of Haskell, STM is really simple! All we need to do is to write concurrent,
+  state-sharing programs like we usually do, and then outsource the ``magic'' to the underlying STM
+  implementation.\\~\\
+
+  Currently, few programming languages have support for STM. Clojure and Haskell do, and C/C++ has it through
+  an experimental GCC extension. However, some languages have constructs similar to STM: Java's \lstinline{synchronized}
+  blocks and methods are one example (though they're internally just locks).
+\end{frame}
+
+\begin{frame}
+  \frametitle{The implementation of STM}
+  Like any other programming feature, STM isn't magic. I won't get into the details, but there are many approaches to implement
+  STM. I'll point you to references:
+  \begin{itemize}
+  \item Lock-based algorithms: see the Mnesia database (you could think of it as a kind of
+    STM) in Erlang \cite{mnesia} or GCC's libitm \cite{libitm}.
+  \item Code transformation: see \cite{deuce}.
+  \item Non-locking algorithms: the majority of programming languages use lock-free algorithms to implement
+    STM. See Haskell's STM library \cite{haskellstm} for example.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Final remarks}
+  STM aims to make shared-memory programming fun again, but it's not bullet proof. Just like the actor model, it can't
+  prevent the nondeterminism of concurrency. Moreover, many CPUs have built-in support for transactional memory nowadays,
+  which further speeds up STM libraries.\\~\\
+
+  STM has been proven fast and sound \cite{stmtoy}! To learn more about STM, I recommend starting with Clojure's STM system or
+  Chapter 28 (STM) of \textit{Real World Haskell}.
+\end{frame}
+
+\begin{frame}[allowframebreaks]{References}
+\def\newblock{}
+\bibliographystyle{alpha}
+\bibliography{stm}
+\end{frame}
+\end{document}
